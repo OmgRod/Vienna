@@ -138,24 +138,64 @@ public class Main
 			eventBusClient = null;
 		}
 
-		WorldData worldData = readWorldFile(worldFile);
-		if (worldData == null)
+		File worldPath = new File(worldFile);
+
+		if (!worldPath.exists())
 		{
-			LogManager.getLogger().fatal("Could not get world data");
+			LogManager.getLogger().fatal("World file or directory does not exist: {}", worldFile);
 			System.exit(2);
 			return;
 		}
 
-		String buildplateId = UUID.randomUUID().toString();
-
-		if (!storeBuildplate(earthDB, eventBusClient, objectStoreClient, playerId, buildplateId, worldData, System.currentTimeMillis()))
+		File[] filesToImport;
+		if (worldPath.isDirectory())
 		{
-			LogManager.getLogger().fatal("Could not add buildplate");
+			filesToImport = worldPath.listFiles((dir, name) -> !name.equals(".gitkeep") && new File(dir, name).isFile());
+		}
+		else
+		{
+			filesToImport = new File[]{worldPath};
+		}
+
+		if (filesToImport == null || filesToImport.length == 0)
+		{
+			LogManager.getLogger().fatal("No world files found to import in {}", worldFile);
+			System.exit(2);
+			return;
+		}
+
+		int successCount = 0;
+		for (File f : filesToImport)
+		{
+			String path = f.getAbsolutePath();
+			LogManager.getLogger().info("Importing world file {}", path);
+			WorldData worldData = readWorldFile(path);
+			if (worldData == null)
+			{
+				LogManager.getLogger().error("Could not get world data for {}", path);
+				continue;
+			}
+
+			String buildplateId = UUID.randomUUID().toString();
+
+			if (!storeBuildplate(earthDB, eventBusClient, objectStoreClient, playerId, buildplateId, worldData, System.currentTimeMillis()))
+			{
+				LogManager.getLogger().error("Could not add buildplate for {}", path);
+				continue;
+			}
+
+			LogManager.getLogger().info("Added buildplate with ID {} for player {} from file {}", buildplateId, playerId, path);
+			successCount++;
+		}
+
+		if (successCount == 0)
+		{
+			LogManager.getLogger().fatal("No buildplates were imported successfully");
 			System.exit(3);
 			return;
 		}
 
-		LogManager.getLogger().info("Added buildplate with ID {} for player {}", buildplateId, playerId);
+		LogManager.getLogger().info("Imported {} buildplate(s) for player {}", successCount, playerId);
 		System.exit(0);
 		return;
 	}
